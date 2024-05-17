@@ -6,10 +6,10 @@ $(document).ready(function() {
 });
 
 function fetchRepos() {
-    const reposContainer = $('#repos');
+    let reposContainer = $('#repos');
     reposContainer.empty();
 
-    const url = `https://api.github.com/users/${username}/repos`;
+    let url = `https://api.github.com/users/${username}/repos`;
 
     $.ajax({
         url: url,
@@ -18,7 +18,7 @@ function fetchRepos() {
             'Authorization': `token ${token}`
         },
         success: function(repos) {
-            const repoData = [];
+            let repoData = [];
 
             repos.forEach(repo => {
                 fetchRepoDetails(repo, function(details) {
@@ -48,7 +48,7 @@ function fetchRepos() {
 }
 
 function fetchRepoDetails(repo, callback) {
-    const detailsUrl = `https://api.github.com/repos/${repo.full_name}`;
+    let detailsUrl = `https://api.github.com/repos/${repo.full_name}`;
 
     $.ajax({
         url: detailsUrl,
@@ -57,13 +57,13 @@ function fetchRepoDetails(repo, callback) {
             'Authorization': `token ${token}`
         },
         success: function(details) {
-            const detailsData = {
+            let detailsData = {
                 commitsCount: 0,
                 language: details.language,
                 readmeUrl: details.html_url + '/blob/master/README.md'
             };
 
-            const commitsUrl = `https://api.github.com/repos/${repo.full_name}/commits`;
+            let commitsUrl = `https://api.github.com/repos/${repo.full_name}/commits`;
             $.ajax({
                 url: commitsUrl,
                 method: 'GET',
@@ -90,9 +90,8 @@ function fetchRepoDetails(repo, callback) {
     });
 }
 
-
 function fetchContributors(repo, callback) {
-    const contributorsUrl = `https://api.github.com/repos/${repo.full_name}/contributors`;
+    let contributorsUrl = `https://api.github.com/repos/${repo.full_name}/contributors`;
 
     $.ajax({
         url: contributorsUrl,
@@ -101,7 +100,7 @@ function fetchContributors(repo, callback) {
             'Authorization': `token ${token}`
         },
         success: function(contributors) {
-            const contributorsData = contributors.map(contributor => ({
+            let contributorsData = contributors.map(contributor => ({
                 username: contributor.login,
                 contributions: contributor.contributions,
                 profileUrl: contributor.html_url
@@ -117,34 +116,90 @@ function fetchContributors(repo, callback) {
 }
 
 function displayRepoAndCommit(repo, details) {
-    const reposContainer = $('#repos');
+    let reposContainer = $('#repos');
+    let template = $('#repo-template').html();
+    let repoElement = $(template);
 
-    const repoElement = $(`
-        <div class="repo">
-            <h3><a href="${repo.html_url}" target="_blank">${repo.name}</a></h3>
-            <p>${repo.description || 'No description available'}</p>
-            <p>Language: ${details.language || 'N/A'}</p>
-            <p>Latest Commit Count: ${details.commitsCount}</p>
-            <p>Creation Date: ${new Date(repo.created_at).toLocaleDateString()}</p>
-            <p><a href="${details.readmeUrl}" target="_blank">README</a></p>
-            <h4>Contributors:</h4>
-            <ul>
-                ${details.contributors.map(contributor => `
-                    <li>
-                        <a href="${contributor.profileUrl}" target="_blank">${contributor.username}</a>
-                        (${contributor.contributions} contributions)
-                    </li>
-                `).join('')}
-            </ul>
-        </div>
-    `);
+    repoElement.find('.repo-link').attr('href', repo.html_url).text(repo.name);
+    repoElement.find('.repo-description').text(repo.description || 'No description available');
+    repoElement.find('.repo-language').text(`Language: ${details.language || 'N/A'}`);
+    repoElement.find('.repo-commit-count').text(`Latest Commit Count: ${details.commitsCount}`);
+    repoElement.find('.repo-creation-date').text(`Creation Date: ${new Date(repo.created_at).toLocaleDateString()}`);
+    repoElement.find('.repo-readme-link').attr('href', details.readmeUrl);
+
+    let contributorsList = repoElement.find('.contributors-list');
+    details.contributors.forEach(contributor => {
+        let contributorItem = $('<li>');
+        let contributorLink = $('<a>').attr('href', contributor.profileUrl).attr('target', '_blank').text(contributor.username);
+        let contributorText = ` (${contributor.contributions} contributions)`;
+
+        contributorItem.append(contributorLink).append(contributorText);
+        contributorsList.append(contributorItem);
+    });
 
     reposContainer.append(repoElement);
 }
 
+function fetchJoAndrieCommits() {
+    let joAndrieCommitsContainer = $('#joAndrieCommits');
+    joAndrieCommitsContainer.empty();
+
+    let url = `https://api.github.com/users/${username}/events`;
+
+    $.ajax({
+        url: url,
+        method: 'GET',
+        headers: {
+            'Authorization': `token ${token}`
+        },
+        success: function(events) {
+            if (!events || events.length === 0) {
+                joAndrieCommitsContainer.html('<p>No commit events found.</p>');
+                return;
+            }
+
+            let commitEvents = events.filter(event => event.type === 'PushEvent' && event.actor.login === username);
+            if (commitEvents.length === 0) {
+                joAndrieCommitsContainer.html('<p>No commits found.</p>');
+                return;
+            }
+
+            let commitCount = 0;
+            commitEvents.forEach(event => {
+                if (commitCount >= 5) return;
+                let repoFullName = event.repo.name;
+                let repoName = repoFullName.substring(repoFullName.indexOf('/') + 1);
+                let commits = event.payload.commits || [];
+                commits.forEach(commit => {
+                    if (commitCount >= 10) return;
+
+                    let commitElement = $('#commit-template').html();
+
+                    let commitElementObj = $(commitElement);
+                    commitElementObj.find('.commit-repo-name').text(repoName);
+                    commitElementObj.find('.commit-message').text(commit.message);
+                    commitElementObj.find('.commit-date').text(new Date(event.created_at).toLocaleString());
+                    commitElementObj.find('.commit-contributor').text(event.actor.login);
+                    commitElementObj.find('.commit-avatar').attr('src', event.actor.avatar_url);
+                    commitElementObj.find('.commit-link').attr('href', commit.url);
+
+                    joAndrieCommitsContainer.append(commitElementObj);
+
+                    commitCount++;
+                });
+            });
+            console.log(commitEvents);
+        },
+        error: function(xhr, status, error) {
+            console.error('Error fetching commits:', error);
+            joAndrieCommitsContainer.html('<p>Error fetching commits. Please try again later.</p>');
+        }
+    });
+}
+
 function updateChart(repoData) {
-    const ctx = document.getElementById('chart').getContext('2d');
-    const myChart = new Chart(ctx, {
+    let ctx = document.getElementById('chart').getContext('2d');
+    let myChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: repoData.map(repo => repo.name),
@@ -165,62 +220,3 @@ function updateChart(repoData) {
         }
     });
 }
-
-function fetchJoAndrieCommits() {
-    const joAndrieCommitsContainer = $('#joAndrieCommits');
-    joAndrieCommitsContainer.empty();
-
-    const url = `https://api.github.com/users/${username}/events`;
-
-    $.ajax({
-        url: url,
-        method: 'GET',
-        headers: {
-            'Authorization': `token ${token}`
-        },
-        success: function(events) {
-            if (!events || events.length === 0) {
-                joAndrieCommitsContainer.html('<p>No commit events found.</p>');
-                return;
-            }
-
-            const commitEvents = events.filter(event => event.type === 'PushEvent' && event.actor.login === username);
-            if (commitEvents.length === 0) {
-                joAndrieCommitsContainer.html('<p>No commits found.</p>');
-                return;
-            }
-
-            let commitCount = 0;
-            commitEvents.forEach(event => {
-                if (commitCount >= 5) return;
-                const repoFullName = event.repo.name;
-                const repoName = repoFullName.substring(repoFullName.indexOf('/') + 1);
-                const commits = event.payload.commits || [];
-                commits.forEach(commit => {
-                    if (commitCount >= 10) return;
-
-                    const commitElement = $(`
-                        <div class="commit">
-                            <p><strong>Repository:</strong> ${repoName}</p>
-                            <p><strong>Message:</strong> ${commit.message}</p>
-                            <p><strong>Date:</strong> ${new Date(event.created_at).toLocaleString()}</p>
-                            <p><strong>Contributor:</strong> ${event.actor.login}</p>
-                            <img src="${event.actor.avatar_url}" alt="Profile Picture" width="50" height="50">
-                            <p><strong>Link:</strong> <a href="${commit.url}" target="_blank">View Commit</a></p>
-                        </div>
-                    `);
-                    joAndrieCommitsContainer.append(commitElement);
-
-                    commitCount++;
-                });
-            });
-            console.log(commitEvents);
-        },
-        error: function(xhr, status, error) {
-            console.error('Error fetching commits:', error);
-            joAndrieCommitsContainer.html('<p>Error fetching commits. Please try again later.</p>');
-        }
-    });
-}
-
-
